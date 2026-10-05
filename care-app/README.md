@@ -66,25 +66,64 @@
 ## 第二阶段：自动任务（已实现）
 
 周三自动分配、周五升级提醒、来访达标安排小组/福音群、四周失联判断，以及 Gmail 邮件通知。
-用 **GitHub Actions 定时任务**（免费、不暂停）通过 Firebase 服务账号访问 Firestore 并发邮件。
-代码见 `automation/`，工作流见仓库根目录 `.github/workflows/care-automation.yml`。
+用 **GitHub Actions 定时任务**（免费、不暂停）通过 **Workload Identity Federation（无密钥）**
+访问 Firestore 并发邮件。代码见 `automation/`，工作流见根目录 `.github/workflows/care-automation.yml`。
+
+> 为什么无密钥：很多 Google Workspace 组织禁止导出服务账号密钥（见报错「Key creation is not
+> allowed…」）。WIF 让 GitHub Actions 用 OIDC 令牌换取**临时**凭证，无需下载任何密钥文件，更安全。
 
 ### 设置步骤
 
 1. **在网页「设置」页填写**（管理员登录后）：探访负责人邮箱、福音事工负责人邮箱、
    达标次数、失联周数、系统网址。保存后写入 Firestore `config/app`，自动任务会读取。
 
-2. **拿 Firebase 服务账号密钥**：Firebase 控制台 → 项目设置 ⚙ → **服务账号** →
-   「生成新的私钥」→ 下载一个 JSON 文件（**这是机密，不要放进仓库**）。
+2. **配置无密钥认证（WIF）**：打开 https://console.cloud.google.com ，选中项目
+   `newlife-care-e61cf`，点右上角 **Cloud Shell**（终端图标），粘贴运行以下命令（会自动创建
+   服务账号、授权、建立 GitHub 信任关系）：
 
-3. **准备 Gmail 发信**：用一个 Gmail 账号发提醒。该账号需开启两步验证，然后在
-   Google 账号 → 安全性 → **应用专用密码** 生成一个 16 位密码。
+   ```bash
+   PROJECT_ID=newlife-care-e61cf
+   REPO=calgarynewlife/NewlifeWebsite
+   PROJECT_NUMBER=$(gcloud projects describe $PROJECT_ID --format='value(projectNumber)')
 
-4. **在 GitHub 仓库加 3 个 Secret**：仓库 → Settings → Secrets and variables →
-   Actions → New repository secret，分别添加：
-   - `FIREBASE_SERVICE_ACCOUNT`：第 2 步 JSON 文件的**全部内容**（整段粘贴）
-   - `GMAIL_USER`：发信用的 Gmail 地址
-   - `GMAIL_APP_PASSWORD`：第 3 步的 16 位应用专用密码
+   gcloud iam service-accounts create care-bot \
+     --project=$PROJECT_ID --display-name="Care automation"
+   SA=care-bot@$PROJECT_ID.iam.gserviceaccount.com
+
+   gcloud projects add-iam-policy-binding $PROJECT_ID \
+     --member="serviceAccount:$SA" --role="roles/datastore.user"
+
+   gcloud iam workload-identity-pools create github-pool \
+     --project=$PROJECT_ID --location=global --display-name="GitHub Actions"
+
+   gcloud iam workload-identity-pools providers create-oidc github-provider \
+     --project=$PROJECT_ID --location=global --workload-identity-pool=github-pool \
+     --display-name="GitHub provider" \
+     --issuer-uri="https://token.actions.githubusercontent.com" \
+     --attribute-mapping="google.subject=assertion.sub,attribute.repository=assertion.repository" \
+     --attribute-condition="assertion.repository=='$REPO'"
+
+   gcloud iam service-accounts add-iam-policy-binding $SA \
+     --project=$PROJECT_ID --role="roles/iam.workloadIdentityUser" \
+     --member="principalSet://iam.googleapis.com/projects/$PROJECT_NUMBER/locations/global/workloadIdentityPools/github-pool/attribute.repository/$REPO"
+
+   echo "WIF_PROVIDER = projects/$PROJECT_NUMBER/locations/global/workloadIdentityPools/github-pool/providers/github-provider"
+   echo "WIF_SERVICE_ACCOUNT = $SA"
+   ```
+
+   记下最后打印的 `WIF_PROVIDER` 和 `WIF_SERVICE_ACCOUNT` 两个值。
+
+3. **在 GitHub 加 2 个「变量」**（不是 Secret）：仓库 → Settings → Secrets and variables →
+   Actions → **Variables** 标签 → New repository variable：
+   - `WIF_PROVIDER`：第 2 步打印的 provider 值
+   - `WIF_SERVICE_ACCOUNT`：第 2 步打印的服务账号邮箱
+   （这两个不是机密，用「变量」即可。）
+
+4. **准备 Gmail 发信并加 2 个 Secret**：用一个 Gmail 发提醒，开启两步验证后在
+   Google 账号 → 安全性 → **应用专用密码** 生成 16 位密码。然后仓库 → Settings →
+   Secrets and variables → Actions → **Secrets** 标签，添加：
+   - `GMAIL_USER`：发信 Gmail 地址
+   - `GMAIL_APP_PASSWORD`：16 位应用专用密码
 
 5. **测试**：仓库 → Actions → 「关怀探访自动任务」→ Run workflow，
    task 选 `assign`（测分配）、`escalate`（测升级）、`daily`（测达标/失联）或 `all`。
@@ -178,9 +217,13 @@ be approved by an admin on the "User Management" tab before they can use the app
 
 Wednesday auto-assignment, Friday escalation reminders, group/gospel placement after the target
 number of visits, lost-contact handling after 4 weeks, and Gmail email notifications. Driven by a
-**GitHub Actions scheduled job** (free, never pauses) that accesses Firestore via a Firebase
-service account and sends email. Code is in `automation/`; the workflow is
+**GitHub Actions scheduled job** (free, never pauses) that accesses Firestore via **Workload
+Identity Federation (keyless)** and sends email. Code is in `automation/`; the workflow is
 `.github/workflows/care-automation.yml` at the repo root.
+
+> Why keyless: many Google Workspace orgs block exporting service-account keys (the error
+> "Key creation is not allowed…"). WIF lets GitHub Actions exchange an OIDC token for **short-lived**
+> credentials with no key file to download — more secure, and unaffected by that policy.
 
 ### Setup
 
@@ -188,18 +231,53 @@ service account and sends email. Code is in `automation/`; the workflow is
    target visit count, lost-contact weeks, and the app URL. Saved to Firestore `config/app`,
    which the automation reads.
 
-2. **Get a Firebase service-account key**: Firebase console → Project settings ⚙ →
-   **Service accounts** → "Generate new private key" → downloads a JSON file
-   (**this is secret — never commit it**).
+2. **Set up keyless auth (WIF)**: open https://console.cloud.google.com, select project
+   `newlife-care-e61cf`, click **Cloud Shell** (terminal icon, top-right), and paste the commands
+   below (creates a service account, grants Firestore access, and trusts your GitHub repo):
 
-3. **Prepare a Gmail sender**: use a Gmail account to send reminders. Enable 2-step verification,
-   then under Google Account → Security → **App passwords**, create a 16-char password.
+   ```bash
+   PROJECT_ID=newlife-care-e61cf
+   REPO=calgarynewlife/NewlifeWebsite
+   PROJECT_NUMBER=$(gcloud projects describe $PROJECT_ID --format='value(projectNumber)')
 
-4. **Add 3 GitHub secrets**: repo → Settings → Secrets and variables → Actions →
-   New repository secret:
-   - `FIREBASE_SERVICE_ACCOUNT`: the entire contents of the JSON from step 2
+   gcloud iam service-accounts create care-bot \
+     --project=$PROJECT_ID --display-name="Care automation"
+   SA=care-bot@$PROJECT_ID.iam.gserviceaccount.com
+
+   gcloud projects add-iam-policy-binding $PROJECT_ID \
+     --member="serviceAccount:$SA" --role="roles/datastore.user"
+
+   gcloud iam workload-identity-pools create github-pool \
+     --project=$PROJECT_ID --location=global --display-name="GitHub Actions"
+
+   gcloud iam workload-identity-pools providers create-oidc github-provider \
+     --project=$PROJECT_ID --location=global --workload-identity-pool=github-pool \
+     --display-name="GitHub provider" \
+     --issuer-uri="https://token.actions.githubusercontent.com" \
+     --attribute-mapping="google.subject=assertion.sub,attribute.repository=assertion.repository" \
+     --attribute-condition="assertion.repository=='$REPO'"
+
+   gcloud iam service-accounts add-iam-policy-binding $SA \
+     --project=$PROJECT_ID --role="roles/iam.workloadIdentityUser" \
+     --member="principalSet://iam.googleapis.com/projects/$PROJECT_NUMBER/locations/global/workloadIdentityPools/github-pool/attribute.repository/$REPO"
+
+   echo "WIF_PROVIDER = projects/$PROJECT_NUMBER/locations/global/workloadIdentityPools/github-pool/providers/github-provider"
+   echo "WIF_SERVICE_ACCOUNT = $SA"
+   ```
+
+   Note the two printed values `WIF_PROVIDER` and `WIF_SERVICE_ACCOUNT`.
+
+3. **Add 2 GitHub Variables** (not Secrets): repo → Settings → Secrets and variables → Actions →
+   **Variables** tab → New repository variable:
+   - `WIF_PROVIDER`: the provider value printed in step 2
+   - `WIF_SERVICE_ACCOUNT`: the service-account email printed in step 2
+   (These are not sensitive, so Variables is fine.)
+
+4. **Prepare Gmail and add 2 Secrets**: use a Gmail account to send reminders; enable 2-step
+   verification, then under Google Account → Security → **App passwords** create a 16-char
+   password. Then repo → Settings → Secrets and variables → Actions → **Secrets** tab, add:
    - `GMAIL_USER`: the sending Gmail address
-   - `GMAIL_APP_PASSWORD`: the 16-char app password from step 3
+   - `GMAIL_APP_PASSWORD`: the 16-char app password
 
 5. **Test**: repo → Actions → "关怀探访自动任务" → Run workflow, pick a task:
    `assign`, `escalate`, `daily`, or `all`. Check the run log to confirm emails went out.

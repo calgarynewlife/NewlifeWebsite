@@ -12,11 +12,21 @@ on:
         required: false
         default: 'auto'
 
+permissions:
+  contents: read
+  id-token: write          # 必须：用于向 Google 换取 OIDC 令牌（无密钥认证）
+
 jobs:
   run:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # 无密钥认证：Workload Identity Federation
+      - name: 认证到 Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.WIF_PROVIDER }}
+          service_account: ${{ vars.WIF_SERVICE_ACCOUNT }}
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
@@ -26,7 +36,6 @@ jobs:
       - name: 运行自动任务
         working-directory: care-app/automation
         env:
-          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
           GMAIL_USER: ${{ secrets.GMAIL_USER }}
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
           RUN_TASK: ${{ github.event.inputs.task || 'auto' }}

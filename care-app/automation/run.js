@@ -15,8 +15,15 @@
 const admin = require('firebase-admin');
 const nodemailer = require('nodemailer');
 
-const svc = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
-admin.initializeApp({ credential: admin.credential.cert(svc) });
+// 认证：优先用服务账号 JSON（若有）；否则用应用默认凭证（Workload Identity Federation）
+if (process.env.FIREBASE_SERVICE_ACCOUNT){
+  admin.initializeApp({ credential: admin.credential.cert(JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT)) });
+} else {
+  admin.initializeApp({
+    credential: admin.credential.applicationDefault(),
+    projectId: process.env.GOOGLE_CLOUD_PROJECT || process.env.GCLOUD_PROJECT || 'newlife-care-e61cf'
+  });
+}
 const db = admin.firestore();
 
 const GMAIL_USER = process.env.GMAIL_USER;
