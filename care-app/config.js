@@ -1,9 +1,14 @@
 // ============================================================
-// 填入你的 Supabase 项目信息（Supabase → Project Settings → API）
-//   SUPABASE_URL   = Project URL
-//   SUPABASE_ANON  = anon / public key （这个 key 可以公开，数据由 RLS 保护）
+// 填入你的 Firebase 项目配置
+//   Firebase 控制台 → 项目设置 ⚙ → 常规 → 你的应用（Web）→ SDK 配置 → 选「配置」
+//   把那段 firebaseConfig 的各字段复制到下面。
+//   这些值可以公开（安全由 Firestore 规则保证）。
 // ============================================================
 window.CARE_CONFIG = {
-  SUPABASE_URL:  'https://tvjwjwggckegvfytyytx.supabase.co',
-  SUPABASE_ANON: 'sb_publishable_XKOP_8admsR11xN7YOT1Kg_dWaE8Ks5'
+  apiKey:            'YOUR_API_KEY',
+  authDomain:        'YOUR_PROJECT.firebaseapp.com',
+  projectId:         'YOUR_PROJECT',
+  storageBucket:     'YOUR_PROJECT.appspot.com',
+  messagingSenderId: 'YOUR_SENDER_ID',
+  appId:             'YOUR_APP_ID'
 };

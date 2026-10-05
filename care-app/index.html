@@ -96,20 +96,6 @@
   </div>
 </div>
 
-<!-- ============ 设置新密码（邮件重置后跳回）============ -->
-<div id="reset-view" style="display:none;min-height:100vh;align-items:center;justify-content:center;padding:1.5rem">
-  <div class="login-card">
-    <h1>设置新密码</h1>
-    <div class="sub">请输入你的新密码</div>
-    <label for="np1">新密码</label>
-    <input id="np1" type="password" autocomplete="new-password">
-    <label for="np2">确认新密码</label>
-    <input id="np2" type="password" autocomplete="new-password">
-    <button class="btn" style="width:100%;margin-top:1.2rem" onclick="doReset()">保存新密码</button>
-    <div class="msg" id="reset-msg"></div>
-  </div>
-</div>
-
 <!-- ============ 等待批准 ============ -->
 <div id="pending-view" style="display:none;min-height:100vh;align-items:center;justify-content:center;padding:1.5rem">
   <div class="login-card" style="text-align:center">
@@ -200,7 +186,9 @@
   </div>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <script src="config.js"></script>
 <script src="app.js"></script>
 </body>

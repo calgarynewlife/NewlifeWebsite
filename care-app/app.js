@@ -1,19 +1,19 @@
 // ============================================================
-// 关怀探访系统 · 前端逻辑（Supabase）
+// 关怀探访系统 · 前端逻辑（Firebase：Auth + Firestore）
 // ============================================================
-// 在 supabase 初始化清理 URL 之前，先捕获是否为密码重置回跳
-const RECOVERY = /type=recovery/.test(location.hash) || /type=recovery/.test(location.search);
+firebase.initializeApp(window.CARE_CONFIG);
+const auth = firebase.auth();
+const db   = firebase.firestore();
+const SS   = firebase.firestore.FieldValue.serverTimestamp;
 
-const cfg = window.CARE_CONFIG;
-const sb = supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON);
-
-let ME = null;          // 当前用户 profile {id,name,role,...}
-let PROFILES = [];      // 所有同工（负责人/管理员可见）
+let ME = null;          // {id,name,email,role,area,active,approved}
+let PROFILES = [];      // 所有用户（负责人/管理员可见）
 let signupMode = false;
 
 const $ = id => document.getElementById(id);
 const esc = s => (s==null?'':String(s)).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const ROLE_LABEL = {admin:'管理员', leader:'负责人', volunteer:'同工'};
+const today = () => new Date().toISOString().slice(0,10);
 
 // ---------- 认证 ----------
 function toggleAuth(){
@@ -26,34 +26,6 @@ function toggleAuth(){
   $('auth-msg').textContent = '';
 }
 
-// ---------- 忘记密码：发送重置邮件 ----------
-async function forgotPassword(){
-  const email = $('email').value.trim();
-  const msg = $('auth-msg'); msg.className='msg';
-  if (!email){ msg.className='msg err'; msg.textContent='请先在上面填写你的邮箱'; return; }
-  const redirectTo = location.origin + location.pathname;
-  const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo });
-  if (error){ msg.className='msg err'; msg.textContent = translateErr(error.message); return; }
-  msg.className='msg ok'; msg.textContent='重置邮件已发送，请查收邮箱并点击链接设置新密码。';
-}
-
-// ---------- 设置新密码 ----------
-function showReset(){
-  ['login-view','app-view','pending-view'].forEach(id=>$(id).style.display='none');
-  $('reset-view').style.display='flex';
-}
-async function doReset(){
-  const p1 = $('np1').value, p2 = $('np2').value;
-  const msg = $('reset-msg'); msg.className='msg';
-  if (p1.length < 6){ msg.className='msg err'; msg.textContent='密码至少 6 位'; return; }
-  if (p1 !== p2){ msg.className='msg err'; msg.textContent='两次输入的密码不一致'; return; }
-  const { error } = await sb.auth.updateUser({ password: p1 });
-  if (error){ msg.className='msg err'; msg.textContent = translateErr(error.message); return; }
-  msg.className='msg ok'; msg.textContent='密码已更新，请用新密码重新登录…';
-  await sb.auth.signOut();
-  setTimeout(()=>{ location.href = location.origin + location.pathname; }, 1500);
-}
-
 async function doAuth(){
   const email = $('email').value.trim(), pw = $('pw').value;
   const msg = $('auth-msg'); msg.className='msg'; msg.textContent='';
@@ -62,50 +34,65 @@ async function doAuth(){
   try {
     if (signupMode){
       const name = $('rname').value.trim();
-      const { error } = await sb.auth.signUp({ email, password: pw, options:{ data:{ name } } });
-      if (error) throw error;
-      msg.className='msg ok'; msg.textContent='注册成功！若开启了邮箱验证，请查收邮件后再登录。';
+      const cred = await auth.createUserWithEmailAndPassword(email, pw);
+      await db.collection('profiles').doc(cred.user.uid).set({
+        name: name || email.split('@')[0], email,
+        role:'volunteer', approved:false, active:true, area:'', createdAt: SS()
+      });
+      // onAuthStateChanged 会接管 → 显示「等待批准」
     } else {
-      const { error } = await sb.auth.signInWithPassword({ email, password: pw });
-      if (error) throw error;
+      await auth.signInWithEmailAndPassword(email, pw);
     }
-  } catch(e){ msg.className='msg err'; msg.textContent = translateErr(e.message); }
+  } catch(e){ msg.className='msg err'; msg.textContent = translateErr(e.code || e.message); }
   $('auth-btn').disabled = false;
 }
 
-async function doLogout(){ await sb.auth.signOut(); location.reload(); }
+async function doLogout(){ await auth.signOut(); location.reload(); }
 
-function translateErr(m){
-  if (/Invalid login/i.test(m)) return '邮箱或密码错误';
-  if (/already registered/i.test(m)) return '该邮箱已注册，请直接登录';
-  if (/at least 6/i.test(m)) return '密码至少 6 位';
-  return m;
+async function forgotPassword(){
+  const email = $('email').value.trim();
+  const msg = $('auth-msg'); msg.className='msg';
+  if (!email){ msg.className='msg err'; msg.textContent='请先在上面填写你的邮箱'; return; }
+  try {
+    await auth.sendPasswordResetEmail(email);
+    msg.className='msg ok'; msg.textContent='重置邮件已发送，请查收邮箱并按链接设置新密码。';
+  } catch(e){ msg.className='msg err'; msg.textContent = translateErr(e.code || e.message); }
+}
+
+function translateErr(c){
+  const m = {
+    'auth/invalid-credential':'邮箱或密码错误',
+    'auth/wrong-password':'密码错误',
+    'auth/user-not-found':'该邮箱未注册',
+    'auth/invalid-email':'邮箱格式不正确',
+    'auth/email-already-in-use':'该邮箱已注册，请直接登录',
+    'auth/weak-password':'密码至少 6 位',
+    'auth/too-many-requests':'尝试过于频繁，请稍后再试'
+  };
+  return m[c] || c;
 }
 
 // ---------- 启动 ----------
-// 邮件重置链接跳回时，URL 带 type=recovery，进入「设置新密码」而非登录
-let recovering = RECOVERY;
-
-sb.auth.onAuthStateChange((e, session) => {
-  if (e === 'PASSWORD_RECOVERY'){ recovering = true; showReset(); return; }
-  if (session && !recovering) boot();
-});
-(async () => {
-  if (recovering){ showReset(); return; }
-  const { data:{ session } } = await sb.auth.getSession();
-  if (session) boot();
-})();
-
-async function boot(){
-  const { data:{ user } } = await sb.auth.getUser();
-  if (!user) return;
-  let { data: prof } = await sb.from('profiles').select('*').eq('id', user.id).single();
-  if (!prof){ // 兜底：触发器若未建档
-    await sb.from('profiles').insert({ id:user.id, email:user.email, name:user.email.split('@')[0] });
-    ({ data: prof } = await sb.from('profiles').select('*').eq('id', user.id).single());
+auth.onAuthStateChanged(async user => {
+  if (!user){
+    ['app-view','pending-view'].forEach(id=>$(id).style.display='none');
+    $('login-view').style.display='flex';
+    return;
   }
-  ME = prof;
-  // 未批准的用户：显示等待批准页，不能进入应用
+  await boot(user);
+});
+
+async function boot(user){
+  let snap = await db.collection('profiles').doc(user.uid).get();
+  if (!snap.exists){
+    await db.collection('profiles').doc(user.uid).set({
+      name:user.email.split('@')[0], email:user.email,
+      role:'volunteer', approved:false, active:true, area:'', createdAt: SS()
+    });
+    snap = await db.collection('profiles').doc(user.uid).get();
+  }
+  ME = { id:user.uid, ...snap.data() };
+
   if (!ME.approved && ME.role !== 'admin'){
     $('login-view').style.display='none';
     $('app-view').style.display='none';
@@ -131,7 +118,7 @@ function buildTabs(){
   if (isLeader()) tabs.push({id:'board',label:'探访看板'},{id:'register',label:'登记新朋友'});
   if (isAdmin())  tabs.push({id:'users',label:'用户管理'},{id:'groups',label:'小组管理'});
   const nav = $('tabs'); nav.innerHTML='';
-  tabs.forEach((t,i) => {
+  tabs.forEach(t => {
     const b = document.createElement('button');
     b.textContent = t.label; b.dataset.p = t.id;
     b.onclick = () => selectTab(t.id);
@@ -157,58 +144,59 @@ function renderActive(){
 
 // ---------- 数据加载 ----------
 async function loadProfiles(){
-  const { data } = await sb.from('profiles').select('*').order('role');
-  PROFILES = data || [];
+  const qs = await db.collection('profiles').get();
+  PROFILES = qs.docs.map(d => ({ id:d.id, ...d.data() }));
 }
-function nameOf(id){ const p = PROFILES.find(x=>x.id===id); return p ? (p.name||p.email) : '—'; }
 
 async function fetchVisitors(filter){
-  let q = sb.from('visitors').select('*').order('first_visit',{ascending:false});
-  if (filter==='mine') q = q.eq('assignee_id', ME.id);
-  const { data, error } = await q;
-  if (error){ console.error(error); return []; }
-  return data || [];
+  let qs;
+  if (filter==='mine'){
+    qs = await db.collection('visitors').where('assigneeId','==',ME.id).get();
+  } else {
+    qs = await db.collection('visitors').get();
+  }
+  const arr = qs.docs.map(d => ({ id:d.id, ...d.data() }));
+  arr.sort((a,b) => String(b.firstVisit||'').localeCompare(String(a.firstVisit||'')));
+  return arr;
 }
 
 // ---------- 我的待办 ----------
 async function loadTodo(){
-  const list = await fetchVisitors('mine');
-  const active = list.filter(v => ['待分配','跟进中','已联系'].includes(v.status));
+  const list = (await fetchVisitors('mine')).filter(v => ['待分配','跟进中','已联系'].includes(v.status));
   const el = $('todo-list');
-  if (!active.length){ el.innerHTML = '<p class="muted">暂无分配给你的待办。</p>'; return; }
-  el.innerHTML = active.map(v => vcard(v, true)).join('');
+  el.innerHTML = list.length ? list.map(v => vcard(v)).join('')
+    : '<p class="muted">暂无分配给你的待办。</p>';
 }
 
 // ---------- 看板 ----------
 async function loadBoard(){
   const list = await fetchVisitors('all');
   const cols = ['待分配','跟进中','已联系','已安排小组','福音群','失联'];
-  const el = $('board');
-  el.innerHTML = cols.map(c => {
+  $('board').innerHTML = cols.map(c => {
     const items = list.filter(v => v.status===c);
     if (!items.length) return '';
-    return `<div class="col-head">${c}（${items.length}）</div>` + items.map(v => vcard(v, false)).join('');
+    return `<div class="col-head">${c}（${items.length}）</div>` + items.map(v => vcard(v)).join('');
   }).join('') || '<p class="muted">还没有访客记录，去「登记新朋友」添加。</p>';
 }
 
 // ---------- 访客卡片 ----------
-function vcard(v, mine){
-  const assignee = v.assignee_id ? nameOf(v.assignee_id) : '未分配';
-  const canEdit = isLeader() || v.assignee_id===ME.id;
+function vcard(v){
+  const assignee = v.assigneeName || '未分配';
+  const canEdit = isLeader() || v.assigneeId===ME.id;
   let acts = '';
   if (canEdit && v.status!=='失联'){
-    acts += `<button class="btn btn-sm" onclick="openFeedback(${v.id},'${esc(v.name)}')">填反馈</button>`;
-    acts += `<button class="btn btn-sm btn-ghost" onclick="incVisit(${v.id})">+1 来访</button>`;
+    acts += `<button class="btn btn-sm" onclick="openFeedback('${v.id}','${esc(v.name)}')">填反馈</button>`;
+    acts += `<button class="btn btn-sm btn-ghost" onclick="incVisit('${v.id}')">+1 来访</button>`;
   }
   if (isLeader()){
-    acts += `<button class="btn btn-sm btn-ghost" onclick="assignPrompt(${v.id})">分配同工</button>`;
-    acts += `<button class="btn btn-sm btn-ghost" onclick="statusPrompt(${v.id})">改状态</button>`;
+    acts += `<button class="btn btn-sm btn-ghost" onclick="assignPrompt('${v.id}')">分配同工</button>`;
+    acts += `<button class="btn btn-sm btn-ghost" onclick="statusPrompt('${v.id}')">改状态</button>`;
   }
   return `<div class="card vcard">
     <div class="vh"><span class="vn">${esc(v.name)}</span>
       <span class="badge b-${v.status}">${v.status}</span></div>
-    <div class="meta">📞 ${esc(v.phone)||'—'} ｜ ${esc(v.identity)} ｜ 区域：${esc(v.area)||'—'} ｜ 来访 ${v.visit_count} 次</div>
-    <div class="meta">首访：${esc(v.first_visit)||'—'} ｜ 同工：${esc(assignee)}${v.last_result ? (' ｜ 末次：'+esc(v.last_result)) : ''}</div>
+    <div class="meta">📞 ${esc(v.phone)||'—'} ｜ ${esc(v.identity)} ｜ 区域：${esc(v.area)||'—'} ｜ 来访 ${v.visitCount} 次</div>
+    <div class="meta">首访：${esc(v.firstVisit)||'—'} ｜ 同工：${esc(assignee)}${v.lastResult ? (' ｜ 末次：'+esc(v.lastResult)) : ''}</div>
     ${v.note?`<div class="meta muted">备注：${esc(v.note)}</div>`:''}
     <div class="actions">${acts}</div>
   </div>`;
@@ -225,46 +213,53 @@ async function registerVisitor(){
   const msg = $('reg-msg'); msg.className='msg'; msg.textContent='';
   const name = $('f-name').value.trim();
   if (!name){ msg.className='msg err'; msg.textContent='请填写姓名'; return; }
-  const assignee = $('f-assignee').value || null;
+  const aid = $('f-assignee').value || null;
+  const ap = aid ? PROFILES.find(p=>p.id===aid) : null;
   const rec = {
     name, phone:$('f-phone').value.trim(), email:$('f-email').value.trim(),
     area:$('f-area').value.trim(), identity:$('f-identity').value,
-    first_visit: $('f-first').value || new Date().toISOString().slice(0,10),
-    visit_count: parseInt($('f-count').value||'1',10),
-    note:$('f-note').value.trim(), created_by: ME.id,
-    assignee_id: assignee,
-    status: assignee ? '跟进中' : '待分配',
-    assign_date: assignee ? new Date().toISOString() : null
+    firstVisit: $('f-first').value || today(),
+    visitCount: parseInt($('f-count').value||'1',10),
+    note:$('f-note').value.trim(), createdBy: ME.id, createdAt: SS(),
+    assigneeId: aid, assigneeName: ap ? (ap.name||ap.email) : null,
+    status: aid ? '跟进中' : '待分配',
+    assignDate: aid ? new Date() : null,
+    lastResult: null, lastContactDate: null, escalated: false
   };
-  const { error } = await sb.from('visitors').insert(rec);
-  if (error){ msg.className='msg err'; msg.textContent='登记失败：'+error.message; return; }
-  msg.className='msg ok'; msg.textContent='已登记！';
-  ['f-name','f-phone','f-email','f-area','f-note'].forEach(id=>$(id).value='');
-  $('f-count').value='1';
+  try {
+    await db.collection('visitors').add(rec);
+    msg.className='msg ok'; msg.textContent='已登记！';
+    ['f-name','f-phone','f-email','f-area','f-note'].forEach(id=>$(id).value='');
+    $('f-count').value='1';
+  } catch(e){ msg.className='msg err'; msg.textContent='登记失败：'+e.message; }
 }
 
 // ---------- 操作 ----------
 async function incVisit(id){
-  const { data:v } = await sb.from('visitors').select('visit_count').eq('id',id).single();
-  await sb.from('visitors').update({ visit_count:(v.visit_count||0)+1 }).eq('id',id);
+  const ref = db.collection('visitors').doc(id);
+  const s = await ref.get();
+  await ref.update({ visitCount:(s.data().visitCount||0)+1 });
   renderActive();
 }
 
 async function assignPrompt(id){
-  const opts = PROFILES.filter(p=>p.active!==false).map((p,i)=>`${i+1}. ${p.name||p.email}`).join('\n');
+  const pool = PROFILES.filter(p=>p.active!==false);
+  const opts = pool.map((p,i)=>`${i+1}. ${p.name||p.email}`).join('\n');
   const n = prompt('分配给哪位同工？输入序号：\n'+opts);
   if (!n) return;
-  const p = PROFILES.filter(x=>x.active!==false)[parseInt(n,10)-1];
+  const p = pool[parseInt(n,10)-1];
   if (!p) return;
-  await sb.from('visitors').update({ assignee_id:p.id, status:'跟进中', assign_date:new Date().toISOString(), escalated:false }).eq('id',id);
+  await db.collection('visitors').doc(id).update({
+    assigneeId:p.id, assigneeName:p.name||p.email, status:'跟进中',
+    assignDate:new Date(), escalated:false
+  });
   renderActive();
 }
 
 async function statusPrompt(id){
   const s = prompt('改为哪个状态？\n待分配 / 跟进中 / 已联系 / 已安排小组 / 福音群 / 失联');
-  const ok = ['待分配','跟进中','已联系','已安排小组','福音群','失联'];
-  if (!ok.includes(s)) return;
-  await sb.from('visitors').update({ status:s }).eq('id',id);
+  if (!['待分配','跟进中','已联系','已安排小组','福音群','失联'].includes(s)) return;
+  await db.collection('visitors').doc(id).update({ status:s });
   renderActive();
 }
 
@@ -273,8 +268,7 @@ let fbVisitor = null;
 function openFeedback(id, name){
   fbVisitor = id;
   $('m-title').textContent = '探访反馈 · ' + name;
-  $('m-note').value=''; $('m-enc').checked=true; $('mr1').checked=true;
-  $('m-msg').textContent='';
+  $('m-note').value=''; $('m-enc').checked=true; $('mr1').checked=true; $('m-msg').textContent='';
   $('modal').classList.add('open');
 }
 function closeModal(){ $('modal').classList.remove('open'); }
@@ -282,19 +276,21 @@ async function submitFeedback(){
   const result = document.querySelector('input[name=mresult]:checked').value;
   const encouraged = $('m-enc').checked;
   const note = $('m-note').value.trim();
-  const { error:e1 } = await sb.from('followups').insert({
-    visitor_id: fbVisitor, by_id: ME.id, by_name: ME.name||ME.email,
-    result, encouraged, note
-  });
-  if (e1){ $('m-msg').className='msg err'; $('m-msg').textContent='失败：'+e1.message; return; }
-  const upd = { last_result:result, last_contact_date:new Date().toISOString() };
-  const { data:cur } = await sb.from('visitors').select('status').eq('id',fbVisitor).single();
-  if (result==='已联系' && cur && cur.status==='跟进中') upd.status='已联系';
-  await sb.from('visitors').update(upd).eq('id',fbVisitor);
-  closeModal(); renderActive();
+  try {
+    await db.collection('followups').add({
+      visitorId: fbVisitor, byId: ME.id, byName: ME.name||ME.email,
+      result, encouraged, note, createdAt: SS()
+    });
+    const ref = db.collection('visitors').doc(fbVisitor);
+    const cur = (await ref.get()).data();
+    const upd = { lastResult:result, lastContactDate:new Date() };
+    if (result==='已联系' && cur.status==='跟进中') upd.status='已联系';
+    await ref.update(upd);
+    closeModal(); renderActive();
+  } catch(e){ $('m-msg').className='msg err'; $('m-msg').textContent='失败：'+e.message; }
 }
 
-// ---------- 用户管理（卡片式，适合手机）----------
+// ---------- 用户管理 ----------
 async function loadUsers(){
   await loadProfiles();
   const pending = PROFILES.filter(p=>!p.approved);
@@ -316,37 +312,39 @@ async function loadUsers(){
       ${ p.approved ? `<div style="margin-top:.5rem"><button class="del" onclick="setApproved('${p.id}',false)">撤销批准</button></div>` : '' }
     </div>`).join('');
 }
-async function setApproved(id,b){ await sb.from('profiles').update({approved:b}).eq('id',id); loadUsers(); }
-async function setRole(id,r){ await sb.from('profiles').update({role:r}).eq('id',id); }
-async function setArea(id,a){ await sb.from('profiles').update({area:a}).eq('id',id); }
-async function setActive(id,b){ await sb.from('profiles').update({active:b}).eq('id',id); }
+async function setApproved(id,b){ await db.collection('profiles').doc(id).update({approved:b}); loadUsers(); }
+async function setRole(id,r){ await db.collection('profiles').doc(id).update({role:r}); }
+async function setArea(id,a){ await db.collection('profiles').doc(id).update({area:a}); }
+async function setActive(id,b){ await db.collection('profiles').doc(id).update({active:b}); }
 
-// ---------- 小组管理（卡片式）----------
+// ---------- 小组管理 ----------
 async function loadGroups(){
-  const { data:groups } = await sb.from('groups').select('*').order('id');
-  $('groups-list').innerHTML = (groups&&groups.length)
+  const qs = await db.collection('groups').orderBy('name').get();
+  const groups = qs.docs.map(d=>({id:d.id, ...d.data()}));
+  $('groups-list').innerHTML = groups.length
     ? groups.map(g=>`<div class="card">
         <div class="vh"><span class="vn">${esc(g.name)}</span>
-          <button class="del" onclick="delGroup(${g.id},'${esc(g.name)}')">删除</button></div>
-        <div class="meta">覆盖区域：${esc(g.cover_area)||'—'}</div>
-        <div class="meta">负责人：${esc(g.leader_name)||'—'}｜${esc(g.leader_email)||'—'}</div>
-        <div class="meta">聚会：${esc(g.meet_time)||'—'}</div>
+          <button class="del" onclick="delGroup('${g.id}','${esc(g.name)}')">删除</button></div>
+        <div class="meta">覆盖区域：${esc(g.coverArea)||'—'}</div>
+        <div class="meta">负责人：${esc(g.leaderName)||'—'}｜${esc(g.leaderEmail)||'—'}</div>
+        <div class="meta">聚会：${esc(g.meetTime)||'—'}</div>
       </div>`).join('')
     : '<p class="muted">还没有小组，用下面表单添加。</p>';
 }
 async function addGroup(){
   const msg = $('grp-msg'); msg.className='msg';
-  const rec = { name:$('g-name').value.trim(), cover_area:$('g-area').value.trim(),
-    leader_name:$('g-ln').value.trim(), leader_email:$('g-le').value.trim(), meet_time:$('g-time').value.trim() };
+  const rec = { name:$('g-name').value.trim(), coverArea:$('g-area').value.trim(),
+    leaderName:$('g-ln').value.trim(), leaderEmail:$('g-le').value.trim(), meetTime:$('g-time').value.trim() };
   if (!rec.name){ msg.className='msg err'; msg.textContent='请填写组名'; return; }
-  const { error } = await sb.from('groups').insert(rec);
-  if (error){ msg.className='msg err'; msg.textContent='失败：'+error.message; return; }
-  ['g-name','g-area','g-ln','g-le','g-time'].forEach(id=>$(id).value='');
-  msg.className='msg ok'; msg.textContent='已添加';
-  loadGroups();
+  try {
+    await db.collection('groups').add(rec);
+    ['g-name','g-area','g-ln','g-le','g-time'].forEach(id=>$(id).value='');
+    msg.className='msg ok'; msg.textContent='已添加';
+    loadGroups();
+  } catch(e){ msg.className='msg err'; msg.textContent='失败：'+e.message; }
 }
 async function delGroup(id,name){
   if (!confirm('确定删除小组「'+name+'」？')) return;
-  await sb.from('groups').delete().eq('id',id);
+  await db.collection('groups').doc(id).delete();
   loadGroups();
 }

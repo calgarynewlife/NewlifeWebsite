@@ -1,0 +1,62 @@
+rules_version = '2';
+// ============================================================
+// 新生命教会 · 关怀探访系统 —— Firestore 安全规则
+// 在 Firebase 控制台 → Firestore Database → 规则 里整段粘贴并「发布」
+// 作用等同于原 Supabase 的 RLS：在数据库层强制角色与审批权限
+// ============================================================
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() { return request.auth != null; }
+    function profileExists() {
+      return exists(/databases/$(database)/documents/profiles/$(request.auth.uid));
+    }
+    function myProfile() {
+      return get(/databases/$(database)/documents/profiles/$(request.auth.uid)).data;
+    }
+    function approved() { return signedIn() && profileExists() && myProfile().approved == true; }
+    function hasRole(roles) { return signedIn() && profileExists() && (myProfile().role in roles); }
+
+    // ---------- 用户档案 ----------
+    match /profiles/{uid} {
+      allow read: if signedIn() && (request.auth.uid == uid || hasRole(['leader','admin']));
+      // 自助建档：只能建自己的，且不能自封角色 / 自我批准
+      allow create: if signedIn() && request.auth.uid == uid
+                    && request.resource.data.role == 'volunteer'
+                    && request.resource.data.approved == false;
+      // 本人可改自己（但不能改 role / approved）；管理员可改任意
+      allow update: if hasRole(['admin'])
+                    || (signedIn() && request.auth.uid == uid
+                        && request.resource.data.role == resource.data.role
+                        && request.resource.data.approved == resource.data.approved);
+      allow delete: if hasRole(['admin']);
+    }
+
+    // ---------- 访客 ----------
+    match /visitors/{id} {
+      allow read:   if approved() && (hasRole(['leader','admin']) || resource.data.assigneeId == request.auth.uid);
+      allow create: if approved() && hasRole(['leader','admin']);
+      allow update: if approved() && (hasRole(['leader','admin']) || resource.data.assigneeId == request.auth.uid);
+      allow delete: if hasRole(['admin']);
+    }
+
+    // ---------- 跟进记录 ----------
+    match /followups/{id} {
+      allow read: if approved() && (
+        hasRole(['leader','admin']) ||
+        get(/databases/$(database)/documents/visitors/$(resource.data.visitorId)).data.assigneeId == request.auth.uid
+      );
+      allow create: if approved() && request.resource.data.byId == request.auth.uid;
+    }
+
+    // ---------- 小组 / 设置 ----------
+    match /groups/{id} { allow read: if approved(); allow write: if hasRole(['admin']); }
+    match /config/{id} { allow read: if approved(); allow write: if hasRole(['admin']); }
+  }
+}
+
+// ============================================================
+// 引导第一个管理员：在 Firebase 控制台 → Firestore → profiles 集合，
+// 找到你注册时生成的那条文档，手动把 role 改为 "admin"、approved 改为 true。
+// 之后新注册用户默认未批准，需管理员在「用户管理」页批准。
+// ============================================================
