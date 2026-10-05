@@ -1,3 +1,5 @@
+*[English version below ↓](#care--visitation-system--web-firebase)*
+
 # 关怀探访系统 · 网页版（Firebase）
 
 网页应用：**Firebase Authentication（登录）+ Firestore（数据库）+ 角色权限 + 审批**，
@@ -72,3 +74,90 @@ Firebase 的定时任务（Cloud Functions 定时触发）需要升级到 Blaze 
 
 访客个人信息存在你自己的 Firebase 项目里，**代码仓库不含任何个人数据**。
 `config.js` 里的 Firebase 配置是公开安全的（设计如此），真正的安全由 `firestore.rules` 保证。
+
+---
+
+# Care & Visitation System · Web (Firebase)
+
+A web app: **Firebase Authentication (login) + Firestore (database) + role-based access + approval**,
+front-end hosted on GitHub Pages. **Completely free, and unlike Supabase the Firebase free tier does not auto-pause.**
+
+## Roles & permissions
+
+| Role | What they can do |
+|---|---|
+| **admin** | Everything: manage users/roles/approvals, manage groups, view & edit all visitors |
+| **leader** | View & edit all visitors, register, assign, take over un-followed cases |
+| **volunteer** | Only see visitors **assigned to them**, submit feedback, +1 visit count |
+
+Permissions are enforced in the **Firestore security rules** (`firestore.rules`) — a volunteer cannot
+reach anyone else's data even via browser dev tools. New sign-ups are **unapproved** by default and must
+be approved by an admin on the "User Management" tab before they can use the app.
+
+## Setup
+
+### 1. Create a Firebase project
+1. Open https://console.firebase.google.com → "Add project", give it a name (e.g. newlife-care)
+   - Google Analytics can be turned off; not needed
+2. Left menu **Build → Authentication → Get started → choose "Email/Password" → Enable → Save**
+3. Left menu **Build → Firestore Database → Create database →** choose "**Start in production mode**"
+   → pick a nearby region → Enable
+
+### 2. Publish the security rules
+- Firestore Database → **Rules** tab → paste the full contents of `firestore.rules` → **Publish**
+
+### 3. Register a Web app and get the config
+- Project settings ⚙ (top-left) → **General** → scroll to "Your apps" → click the **`</>` (Web)** icon
+  → give it a nickname → Register
+- It shows a `firebaseConfig = { apiKey: ..., authDomain: ..., ... }` snippet
+- Copy those fields into `config.js` (these values are safe to be public; security comes from the rules)
+
+### 4. Deploy the front-end (GitHub Pages)
+- This `care-app` folder is already in the repo; after pushing it's reachable at
+  `https://michaelgniu.github.io/NewlifeWebsite/care-app/`
+
+### 5. Create the first admin
+1. Open the URL above → "Register" → sign up with your email
+   (Firebase does not require email verification by default — you're logged in right after signing up)
+2. You'll see a "Waiting for approval" screen — that's expected
+3. Back in the Firebase console → **Firestore Database → Data** → open the `profiles` collection →
+   find your document
+   - Change `role` to `admin`
+   - Change `approved` to `true` (boolean)
+4. Refresh the page — you're now the admin and can approve other volunteers and set their roles
+   on the "User Management" tab
+
+### 6. (Optional) Customize the password-reset email
+- Authentication → **Templates → Password reset** lets you edit the wording and sender name
+- Password reset uses Firebase's own built-in page; no extra configuration needed
+
+## Daily use
+
+- **Leaders** register newcomers on "Register", and may assign a volunteer (or leave blank for
+  auto-assignment in Phase 2)
+- **Volunteers** log in to see "My To-Do" → after contacting, submit "Feedback"
+- **Leaders** see everyone's status at a glance on the "Board"
+- **Forgot password**: on the login page click "Forgot password?" → get the email → set a new
+  password on Firebase's page
+
+## Data model (Firestore collections)
+
+- `profiles/{uid}`: name, email, role, area, active, approved
+- `visitors/{id}`: name, phone, email, area, identity, firstVisit, visitCount, status,
+  assigneeId, assigneeName, assignDate, lastResult, lastContactDate, escalated, note
+- `followups/{id}`: visitorId, byId, byName, result, encouraged, note, createdAt
+- `groups/{id}`: name, coverArea, leaderName, leaderEmail, meetTime
+
+## Phase 2 (to do)
+
+Wednesday auto-assignment, Friday escalation reminders, group/gospel placement after the target
+number of visits, lost-contact handling after 4 weeks, and email notifications.
+Firebase's scheduled Cloud Functions require upgrading to the paid Blaze plan; to stay free,
+Phase 2 will use a **GitHub Actions scheduled job** (free) that accesses Firestore via a service
+account to run these flows and send email. To be built later.
+
+## Privacy
+
+Visitor personal information lives in your own Firebase project — **the code repo contains no
+personal data**. The Firebase config in `config.js` is safe to be public (by design); real
+security is enforced by `firestore.rules`.
