@@ -1,2 +1,7 @@
 
 update-sermon.log
+node_modules/
+care-app/automation/node_modules/
+# 切勿提交服务账号密钥
+*serviceAccount*.json
+firebase-adminsdk*.json

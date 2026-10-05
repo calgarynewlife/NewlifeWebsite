@@ -63,12 +63,38 @@
 - `followups/{id}`：visitorId, byId, byName, result, encouraged, note, createdAt
 - `groups/{id}`：name, coverArea, leaderName, leaderEmail, meetTime
 
-## 第二阶段（待做）
+## 第二阶段：自动任务（已实现）
 
-周三自动分配、周五升级提醒、来访达标安排小组/福音群、四周失联判断，以及邮件通知。
-Firebase 的定时任务（Cloud Functions 定时触发）需要升级到 Blaze 计费计划；
-为保持免费，第二阶段计划用 **GitHub Actions 定时任务**（免费）通过服务账号访问 Firestore
-来跑这些自动流程 + 发邮件。到时再做。
+周三自动分配、周五升级提醒、来访达标安排小组/福音群、四周失联判断，以及 Gmail 邮件通知。
+用 **GitHub Actions 定时任务**（免费、不暂停）通过 Firebase 服务账号访问 Firestore 并发邮件。
+代码见 `automation/`，工作流见仓库根目录 `.github/workflows/care-automation.yml`。
+
+### 设置步骤
+
+1. **在网页「设置」页填写**（管理员登录后）：探访负责人邮箱、福音事工负责人邮箱、
+   达标次数、失联周数、系统网址。保存后写入 Firestore `config/app`，自动任务会读取。
+
+2. **拿 Firebase 服务账号密钥**：Firebase 控制台 → 项目设置 ⚙ → **服务账号** →
+   「生成新的私钥」→ 下载一个 JSON 文件（**这是机密，不要放进仓库**）。
+
+3. **准备 Gmail 发信**：用一个 Gmail 账号发提醒。该账号需开启两步验证，然后在
+   Google 账号 → 安全性 → **应用专用密码** 生成一个 16 位密码。
+
+4. **在 GitHub 仓库加 3 个 Secret**：仓库 → Settings → Secrets and variables →
+   Actions → New repository secret，分别添加：
+   - `FIREBASE_SERVICE_ACCOUNT`：第 2 步 JSON 文件的**全部内容**（整段粘贴）
+   - `GMAIL_USER`：发信用的 Gmail 地址
+   - `GMAIL_APP_PASSWORD`：第 3 步的 16 位应用专用密码
+
+5. **测试**：仓库 → Actions → 「关怀探访自动任务」→ Run workflow，
+   task 选 `assign`（测分配）、`escalate`（测升级）、`daily`（测达标/失联）或 `all`。
+   看运行日志确认邮件发出。确认无误后，它每天会自动按星期运行。
+
+### 运行时间
+
+GitHub Actions 按 UTC 定时（每天 15:00 UTC，约卡加利上午 8–9 点）。脚本按
+**America/Edmonton 本地星期**判断：**周三**分配、**周五**升级、**每天**检查达标与失联。
+（夏令时会让触发时间在上午 8 点与 9 点间浮动一小时，不影响功能。）
 
 ## 隐私
 
@@ -148,13 +174,43 @@ be approved by an admin on the "User Management" tab before they can use the app
 - `followups/{id}`: visitorId, byId, byName, result, encouraged, note, createdAt
 - `groups/{id}`: name, coverArea, leaderName, leaderEmail, meetTime
 
-## Phase 2 (to do)
+## Phase 2: Automation (implemented)
 
 Wednesday auto-assignment, Friday escalation reminders, group/gospel placement after the target
-number of visits, lost-contact handling after 4 weeks, and email notifications.
-Firebase's scheduled Cloud Functions require upgrading to the paid Blaze plan; to stay free,
-Phase 2 will use a **GitHub Actions scheduled job** (free) that accesses Firestore via a service
-account to run these flows and send email. To be built later.
+number of visits, lost-contact handling after 4 weeks, and Gmail email notifications. Driven by a
+**GitHub Actions scheduled job** (free, never pauses) that accesses Firestore via a Firebase
+service account and sends email. Code is in `automation/`; the workflow is
+`.github/workflows/care-automation.yml` at the repo root.
+
+### Setup
+
+1. **Fill in the "Settings" tab** (as admin): care-leader email, gospel-ministry-leader email,
+   target visit count, lost-contact weeks, and the app URL. Saved to Firestore `config/app`,
+   which the automation reads.
+
+2. **Get a Firebase service-account key**: Firebase console → Project settings ⚙ →
+   **Service accounts** → "Generate new private key" → downloads a JSON file
+   (**this is secret — never commit it**).
+
+3. **Prepare a Gmail sender**: use a Gmail account to send reminders. Enable 2-step verification,
+   then under Google Account → Security → **App passwords**, create a 16-char password.
+
+4. **Add 3 GitHub secrets**: repo → Settings → Secrets and variables → Actions →
+   New repository secret:
+   - `FIREBASE_SERVICE_ACCOUNT`: the entire contents of the JSON from step 2
+   - `GMAIL_USER`: the sending Gmail address
+   - `GMAIL_APP_PASSWORD`: the 16-char app password from step 3
+
+5. **Test**: repo → Actions → "关怀探访自动任务" → Run workflow, pick a task:
+   `assign`, `escalate`, `daily`, or `all`. Check the run log to confirm emails went out.
+   After that it runs automatically every day by weekday.
+
+### Schedule
+
+GitHub Actions runs on UTC (daily at 15:00 UTC, ~8–9 AM in Calgary). The script decides by the
+**America/Edmonton local weekday**: **Wednesday** assign, **Friday** escalate, **daily**
+milestone & lost-contact checks. (DST shifts the fire time between 8 and 9 AM; functionality is
+unaffected.)
 
 ## Privacy
 

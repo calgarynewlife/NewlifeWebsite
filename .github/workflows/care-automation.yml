@@ -1,0 +1,33 @@
+name: 关怀探访自动任务
+
+on:
+  schedule:
+    # 每天 15:00 UTC（卡加利 MST 上午8点 / MDT 上午9点）
+    # 脚本按本地星期判断：周三分配、周五升级、每天检查达标与失联
+    - cron: '0 15 * * *'
+  workflow_dispatch:
+    inputs:
+      task:
+        description: '手动运行：auto(按星期) / assign / escalate / daily / all'
+        required: false
+        default: 'auto'
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: 安装依赖
+        working-directory: care-app/automation
+        run: npm install --no-audit --no-fund
+      - name: 运行自动任务
+        working-directory: care-app/automation
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          GMAIL_USER: ${{ secrets.GMAIL_USER }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          RUN_TASK: ${{ github.event.inputs.task || 'auto' }}
+        run: node run.js

@@ -116,7 +116,7 @@ const isAdmin  = () => ME && ME.role==='admin';
 function buildTabs(){
   const tabs = [{id:'todo',label:'我的待办'}];
   if (isLeader()) tabs.push({id:'board',label:'探访看板'},{id:'register',label:'登记新朋友'});
-  if (isAdmin())  tabs.push({id:'users',label:'用户管理'},{id:'groups',label:'小组管理'});
+  if (isAdmin())  tabs.push({id:'users',label:'用户管理'},{id:'groups',label:'小组管理'},{id:'settings',label:'设置'});
   const nav = $('tabs'); nav.innerHTML='';
   tabs.forEach(t => {
     const b = document.createElement('button');
@@ -140,6 +140,7 @@ function renderActive(){
   else if (activeTab==='register') fillAssigneeSelect();
   else if (activeTab==='users') loadUsers();
   else if (activeTab==='groups') loadGroups();
+  else if (activeTab==='settings') loadSettings();
 }
 
 // ---------- 数据加载 ----------
@@ -347,4 +348,31 @@ async function delGroup(id,name){
   if (!confirm('确定删除小组「'+name+'」？')) return;
   await db.collection('groups').doc(id).delete();
   loadGroups();
+}
+
+// ---------- 设置 ----------
+async function loadSettings(){
+  const d = await db.collection('config').doc('app').get();
+  const c = d.exists ? d.data() : {};
+  $('s-church').value = c.churchName || '新生命国语播道会';
+  $('s-care').value   = c.careLeaderEmail || '';
+  $('s-gospel').value = c.gospelLeaderEmail || '';
+  $('s-goal').value   = c.goalVisits || 4;
+  $('s-lost').value   = c.lostWeeks || 4;
+  $('s-url').value    = c.appUrl || (location.origin + location.pathname);
+}
+async function saveSettings(){
+  const msg = $('set-msg'); msg.className='msg';
+  const rec = {
+    churchName: $('s-church').value.trim(),
+    careLeaderEmail: $('s-care').value.trim(),
+    gospelLeaderEmail: $('s-gospel').value.trim(),
+    goalVisits: parseInt($('s-goal').value||'4',10),
+    lostWeeks: parseInt($('s-lost').value||'4',10),
+    appUrl: $('s-url').value.trim()
+  };
+  try {
+    await db.collection('config').doc('app').set(rec, { merge:true });
+    msg.className='msg ok'; msg.textContent='已保存';
+  } catch(e){ msg.className='msg err'; msg.textContent='保存失败：'+e.message; }
 }

@@ -166,6 +166,21 @@
         <div class="msg" id="grp-msg"></div>
       </div>
     </section>
+    <!-- 设置 -->
+    <section class="panel" id="p-settings">
+      <h2 class="title">设置</h2>
+      <div class="card">
+        <p class="muted" style="margin-bottom:1rem">以下设置供自动任务（分配/升级/达标/失联/邮件）使用。</p>
+        <label>教会名称</label><input id="s-church">
+        <label>探访负责人邮箱（接收未跟进/失联/待安排通知）</label><input id="s-care" inputmode="email">
+        <label>福音事工负责人邮箱（接收慕道友达标通知）</label><input id="s-gospel" inputmode="email">
+        <label>来访达标次数（达到后安排小组/福音群）</label><input id="s-goal" type="number" min="1" value="4">
+        <label>失联周数（首访多少周联系不上转失联）</label><input id="s-lost" type="number" min="1" value="4">
+        <label>系统网址（放进提醒邮件里的链接）</label><input id="s-url" inputmode="url">
+        <button class="btn" style="margin-top:1rem;width:100%" onclick="saveSettings()">保存设置</button>
+        <div class="msg" id="set-msg"></div>
+      </div>
+    </section>
   </main>
 </div>
 
