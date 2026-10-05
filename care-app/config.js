@@ -5,10 +5,12 @@
 //   这些值可以公开（安全由 Firestore 规则保证）。
 // ============================================================
 window.CARE_CONFIG = {
-  apiKey:            'YOUR_API_KEY',
-  authDomain:        'YOUR_PROJECT.firebaseapp.com',
-  projectId:         'YOUR_PROJECT',
-  storageBucket:     'YOUR_PROJECT.appspot.com',
-  messagingSenderId: 'YOUR_SENDER_ID',
-  appId:             'YOUR_APP_ID'
+  apiKey: "AIzaSyC7g66tBsqdiJdVfgjjGG2TBmvcn7IxkgA",
+  authDomain: "newlife-care-e61cf.firebaseapp.com",
+  projectId: "newlife-care-e61cf",
+  storageBucket: "newlife-care-e61cf.firebasestorage.app",
+  messagingSenderId: "839303055370",
+  appId: "1:839303055370:web:c2377aa208935633f577f3"
 };
+
+
