@@ -12,19 +12,23 @@
  *   GMAIL_APP_PASSWORD        Gmail 应用专用密码
  *   RUN_TASK                  auto（默认，按星期）/ assign / escalate / daily / all
  */
-const admin = require('firebase-admin');
+const { Firestore } = require('@google-cloud/firestore');
 const nodemailer = require('nodemailer');
 
-// 认证：优先用服务账号 JSON（若有）；否则用应用默认凭证（Workload Identity Federation）
+const PROJECT_ID = process.env.GOOGLE_CLOUD_PROJECT || process.env.GCLOUD_PROJECT || 'newlife-care-e61cf';
+
+// 认证：优先用服务账号 JSON（若有）；否则用应用默认凭证（Workload Identity Federation）。
+// @google-cloud/firestore 基于 google-auth-library，原生支持 WIF 的 external_account 凭证。
+let db;
 if (process.env.FIREBASE_SERVICE_ACCOUNT){
-  admin.initializeApp({ credential: admin.credential.cert(JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT)) });
-} else {
-  admin.initializeApp({
-    credential: admin.credential.applicationDefault(),
-    projectId: process.env.GOOGLE_CLOUD_PROJECT || process.env.GCLOUD_PROJECT || 'newlife-care-e61cf'
+  const svc = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+  db = new Firestore({
+    projectId: svc.project_id || PROJECT_ID,
+    credentials: { client_email: svc.client_email, private_key: svc.private_key }
   });
+} else {
+  db = new Firestore({ projectId: PROJECT_ID }); // ADC / WIF（GOOGLE_APPLICATION_CREDENTIALS）
 }
-const db = admin.firestore();
 
 const GMAIL_USER = process.env.GMAIL_USER;
 const transporter = nodemailer.createTransport({
