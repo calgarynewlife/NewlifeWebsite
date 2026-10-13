@@ -175,6 +175,27 @@
     }
     .ql-btn:hover { background: var(--navy-mid); transform: translateY(-1px); }
 
+    /* EVENTS */
+    #events { padding-top: 4rem; padding-bottom: 4rem; }
+    .event-card {
+      display: flex; gap: 1.75rem; align-items: stretch;
+      background: var(--white); border-radius: 16px; overflow: hidden;
+      box-shadow: 0 4px 22px rgba(15,32,68,0.10);
+    }
+    .event-poster { flex: 0 0 46%; display: block; }
+    .event-poster img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .event-body { flex: 1; padding: 1.75rem 1.75rem 1.75rem 0; }
+    .event-body h3 { font-family: 'Noto Serif SC', serif; color: var(--navy); font-size: 1.4rem; margin-bottom: 0.25rem; }
+    .event-sub { color: var(--gold); font-weight: 600; font-size: 0.95rem; margin-bottom: 1rem; }
+    .event-body p { color: #444; font-size: 0.95rem; }
+    .event-meta { list-style: none; margin-top: 1.25rem; display: flex; flex-direction: column; gap: 0.5rem; }
+    .event-meta li { color: var(--navy); font-size: 0.95rem; }
+    @media (max-width: 760px) {
+      .event-card { flex-direction: column; }
+      .event-poster { flex: none; }
+      .event-body { padding: 1.5rem; }
+    }
+
     /* Slide dots */
     .slide-dots {
       position: absolute; bottom: 28px; left: 50%; transform: translateX(-50%);
@@ -512,6 +533,32 @@
         <a id="weekly-bulletin" href="https://script.google.com/macros/s/AKfycbxqtBmmQpmunz9hhcILKVqgaMtEn1KscoQh9FzU8_Wy4XkRzS9K2W88YjFdbYbowQvW/exec" target="_blank" rel="noopener" class="ql-btn">📄 每周周报</a>
         <a href="https://forms.gle/YLN2FNpx4RmAp99M7" target="_blank" rel="noopener" class="ql-btn">👶 儿童主日学报名</a>
         <a href="https://forms.gle/CWR3T3Dh4RsydMQNA" target="_blank" rel="noopener" class="ql-btn">🧑‍🤝‍🧑 青少年事工报名</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ─── EVENTS ─────────────────────────────────────────────── -->
+<section id="events" style="background:var(--cream);">
+  <div class="container">
+    <div class="section-header fade-in" style="margin-bottom:1.5rem;">
+      <div class="section-eyebrow">最近活动</div>
+      <h2 class="section-title">近期活动</h2>
+      <hr class="bar" style="margin:1rem 0 0;" />
+    </div>
+    <div class="event-card fade-in">
+      <a href="glow-for-jesus.webp" target="_blank" rel="noopener" class="event-poster">
+        <img src="glow-for-jesus.webp" alt="Glow for Jesus 秋季欢乐嘉年华海报" loading="lazy" />
+      </a>
+      <div class="event-body">
+        <h3>Glow for Jesus · 为耶稣发光！</h3>
+        <p class="event-sub">秋季欢乐嘉年华 · Fall Carnival</p>
+        <p>诚挚邀请全家大小一起来参加！这是一个充满爱与欢乐的秋季家庭活动，现场有美味晚餐、趣味游戏、创意手工和精美奖品！欢迎孩子们穿上自己喜欢的可爱装扮（Costume），一起度过美好的秋夜！</p>
+        <ul class="event-meta">
+          <li>🗓 <strong>10月31日</strong>（星期六）</li>
+          <li>🕠 <strong>5:30 – 8:30 PM</strong></li>
+          <li>📍 新生命教会 · 4712 21 Ave NW, Calgary</li>
+        </ul>
       </div>
     </div>
   </div>
